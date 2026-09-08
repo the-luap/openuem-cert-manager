@@ -6,6 +6,7 @@ require (
 	entgo.io/ent v0.14.5
 	github.com/chmike/domain v1.1.0
 	github.com/jackc/pgx/v5 v5.8.0
+	github.com/nats-io/nkeys v0.4.16
 	github.com/open-uem/ent v0.0.0-20260306075100-2d3649b3da04
 	github.com/open-uem/nats v0.11.1-0.20260306074514-8e457deeb739
 	github.com/open-uem/utils v0.0.0-20260306074720-edefb16dda84
@@ -27,10 +28,10 @@ require (
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
-	github.com/klauspost/compress v1.18.4 // indirect
+	github.com/klauspost/compress v1.19.2 // indirect
 	github.com/mitchellh/go-wordwrap v1.0.1 // indirect
-	github.com/nats-io/nats.go v1.49.0 // indirect
-	github.com/nats-io/nkeys v0.4.15 // indirect
+	github.com/nats-io/jwt/v2 v2.8.2 // indirect
+	github.com/nats-io/nats.go v1.53.1 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/open-uem/openuem-ansible-config v0.0.0-20260127123556-80a04b5821c5 // indirect
 	github.com/open-uem/wingetcfg v0.0.0-20251011111407-80e823d91ea5 // indirect
@@ -38,12 +39,14 @@ require (
 	github.com/xrash/smetrics v0.0.0-20250705151800-55b8f293f342 // indirect
 	github.com/zclconf/go-cty v1.18.0 // indirect
 	github.com/zclconf/go-cty-yaml v1.2.0 // indirect
-	golang.org/x/crypto v0.48.0 // indirect
-	golang.org/x/mod v0.33.0 // indirect
-	golang.org/x/sync v0.19.0 // indirect
-	golang.org/x/sys v0.41.0 // indirect
-	golang.org/x/text v0.34.0 // indirect
-	golang.org/x/tools v0.42.0 // indirect
+	golang.org/x/crypto v0.55.0 // indirect
+	golang.org/x/mod v0.38.0 // indirect
+	golang.org/x/sync v0.22.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/text v0.41.0 // indirect
+	golang.org/x/tools v0.48.0 // indirect
 	gopkg.in/ini.v1 v1.67.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace github.com/open-uem/nats => github.com/the-luap/openuem-nats v0.11.1-0.20260908001929-5083e68c8f76

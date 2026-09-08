@@ -26,6 +26,7 @@ func main() {
 
 func getCommands() []*cli.Command {
 	return []*cli.Command{
+		commands.SetupIndividualBroker(),
 		commands.CreateClientCertificate(),
 		commands.CreateUserCertificate(),
 		commands.CreateCA(),
