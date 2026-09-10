@@ -27,3 +27,45 @@ jobs:
         if: runner.os == 'Linux'
         run: go test -race -count=1 ./internal/broker ./internal/commands
       - run: go build ./...
+
+  upgrade-process:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: the-luap/openuem-cert-manager
+          ref: 938ea1a77eba4c9eb4517db629fc42ef2f8b96ad
+          path: .legacy-source
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: the-luap/openuem-console
+          ref: aadf9c3ffa52e623998bbfd04a87dbc33387c610
+          path: .broker-source
+          persist-credentials: false
+      - name: Build actual previous initializer, upgrade and stock broker images
+        run: |
+          set -euo pipefail
+          docker build -f .legacy-source/Dockerfile.private-pki --target runtime \
+            -t openuem-private-pki:legacy-upgrade-test .legacy-source
+          docker build -f Dockerfile.private-pki --target runtime \
+            -t openuem-private-pki:upgrade-test .
+          docker build -f .broker-source/Dockerfile.broker --target runtime \
+            -t openuem-broker:upgrade-test .broker-source
+          docker build -f Dockerfile.broker-upgrade-test -t broker-upgrade:check .
+      - name: Verify retained keys, grant boundaries and JetStream state across upgrade
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --read-only --cap-drop ALL \
+            --security-opt no-new-privileges --pids-limit 128 --memory 256m \
+            --tmpfs /tmp:rw,nosuid,nodev,noexec,size=64m,uid=65532,gid=65532,mode=0700 \
+            broker-upgrade:check | tee broker-upgrade.log
+          grep -q '^--- PASS: TestBrokerUpgradeDistributionProcess ' broker-upgrade.log

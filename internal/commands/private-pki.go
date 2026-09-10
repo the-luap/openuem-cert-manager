@@ -13,7 +13,7 @@ import (
 )
 
 func PlatformSetupCommands() []*cli.Command {
-	return []*cli.Command{{
+	return []*cli.Command{SetupIndividualBrokerUpgrade(), {
 		Name: "private-pki", Usage: "Initialize and verify private backend and gateway TLS identities without replacing existing keys",
 		Flags: []cli.Flag{
 			&cli.StringFlag{Name: "directory", Required: true, Usage: "New or matching private initialization directory under an existing trusted parent"},

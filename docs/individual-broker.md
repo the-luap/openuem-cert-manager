@@ -66,8 +66,10 @@ and could not start the current worker against its generated configuration.
 This change affects newly generated configuration. An ordinary initialization
 retry still rejects a changed installed `broker.json` and never rewrites it or
 rotates its service identities. Existing configurations require a deliberate
-configuration update that retains their keys and JetStream state; automatic
-upgrade/reload orchestration remains separate work.
+[reviewed worker-grant migration](broker-upgrade.md) that retains their keys and
+JetStream state. The new command provides a read-only preview and durable,
+resumable publication; deployment stop/recreate/readiness orchestration remains
+separate work.
 
 Run `go test ./internal/broker ./internal/commands` to verify protected creation,
 partial setup recovery, unchanged retries, conflicting settings, missing installed

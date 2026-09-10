@@ -1,0 +1,7 @@
+**
+!go.mod
+!go.sum
+!LICENSE
+!internal/
+!internal/broker/
+!internal/broker/*.go

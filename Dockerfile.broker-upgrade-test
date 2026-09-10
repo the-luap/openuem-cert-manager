@@ -1,0 +1,33 @@
+ARG CURRENT_IMAGE=openuem-private-pki:upgrade-test
+ARG LEGACY_IMAGE=openuem-private-pki:legacy-upgrade-test
+ARG BROKER_IMAGE=openuem-broker:upgrade-test
+FROM ${CURRENT_IMAGE} AS current
+FROM ${LEGACY_IMAGE} AS legacy
+FROM ${BROKER_IMAGE} AS broker
+
+FROM --platform=$BUILDPLATFORM golang:1.26.8-bookworm@sha256:9fdc884aacc3bec89b20ffc69f4bb369c78210e3e4f600387b5128b12c199f81 AS build
+WORKDIR /src
+ENV GOTOOLCHAIN=local
+COPY go.mod go.sum ./
+COPY internal/broker ./internal/broker
+ARG TARGETOS
+ARG TARGETARCH
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+    go test -mod=readonly -trimpath -buildvcs=false -c -o /out/broker-upgrade.test ./internal/broker
+
+# This is an acceptance fixture, never a distribution or deployment image.
+FROM scratch
+COPY --from=current /openuem-cert-manager /current-cert-manager
+COPY --from=legacy /openuem-cert-manager /legacy-cert-manager
+COPY --from=broker /nats-server /nats-server
+COPY --from=broker /licenses/nats-server.LICENSE /licenses/nats-server.LICENSE
+COPY --from=build /out/broker-upgrade.test /broker-upgrade.test
+COPY LICENSE /licenses/openuem-cert-manager.LICENSE
+USER 65532:65532
+ENV OPENUEM_UPGRADE_BINARY=/current-cert-manager
+ENV OPENUEM_LEGACY_SETUP_BINARY=/legacy-cert-manager
+ENV OPENUEM_BROKER_BINARY=/nats-server
+ENTRYPOINT ["/broker-upgrade.test"]
+CMD ["-test.v", "-test.run=^TestBrokerUpgradeDistributionProcess$", "-test.timeout=60s"]
