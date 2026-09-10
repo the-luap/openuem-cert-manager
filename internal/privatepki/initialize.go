@@ -60,7 +60,8 @@ func Initialize(ctx context.Context, path string, config Config) (*Manifest, err
 }
 
 func initialize(ctx context.Context, d *directory, config Config, now time.Time, afterWrite func(string) error) (*Manifest, error) {
-	present, err := inventory(d)
+	directories, artifacts := config.layout()
+	present, err := inventory(d, config)
 	if err != nil {
 		return nil, err
 	}
@@ -100,24 +101,20 @@ func initialize(ctx context.Context, d *directory, config Config, now time.Time,
 			clear(value)
 		}
 	}()
-	for _, path := range artifacts[:8] {
-		value, err := ensure(ctx, d, path, present[path], func() ([]byte, error) { return bytes.Clone(identity.Files[path]), nil }, afterWrite)
-		if err != nil {
-			return nil, err
+	for _, path := range artifacts {
+		expected := identity.Files[path]
+		if source, copied := trustSources[path]; copied {
+			expected = identity.Files[source]
 		}
-		data[path] = value
-		if !bytes.Equal(value, identity.Files[path]) {
+		if len(expected) == 0 {
 			return nil, ErrState
 		}
-	}
-	for index, source := range []string{"authority/ca.pem", "gateway/client.pem", "gateway/client.pem", "authority/ca.pem"} {
-		path := artifacts[8+index]
-		value, err := ensure(ctx, d, path, present[path], func() ([]byte, error) { return bytes.Clone(data[source]), nil }, afterWrite)
+		value, err := ensure(ctx, d, path, present[path], func() ([]byte, error) { return bytes.Clone(expected), nil }, afterWrite)
 		if err != nil {
 			return nil, err
 		}
 		data[path] = value
-		if !bytes.Equal(value, data[source]) {
+		if !bytes.Equal(value, expected) {
 			return nil, ErrState
 		}
 	}
@@ -126,7 +123,7 @@ func initialize(ctx context.Context, d *directory, config Config, now time.Time,
 	}
 	// Re-read every file and directory before the final readiness marker. A
 	// matching manifest is also required on later invocations, never rewritten.
-	if _, err := inventory(d); err != nil {
+	if _, err := inventory(d, config); err != nil {
 		return nil, err
 	}
 	manifest := Manifest{Version: 1, Installation: b.Installation, NotAfter: b.CreatedAt.AddDate(1, 0, 0), Files: map[string]string{}}
@@ -238,7 +235,8 @@ func bind(d *directory, config Config, now time.Time, present map[string]bool) (
 
 // The layout is fixed and shallow. Unknown entries, links, non-private paths and
 // extra data are rejected without deleting or chmod-ing anything.
-func inventory(d *directory) (map[string]bool, error) {
+func inventory(d *directory, config Config) (map[string]bool, error) {
+	directories, artifacts := config.layout()
 	if d.unchanged() != nil {
 		return nil, ErrState
 	}

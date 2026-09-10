@@ -27,6 +27,8 @@ func (i *identity) clear() {
 // exporting any service file. Retrying an interrupted export never re-signs a
 // gateway leaf or generates a different service key, even if its tail was lost.
 func loadIdentity(ctx context.Context, d *directory, b binding, now time.Time, present map[string]bool) (*identity, error) {
+	_, artifacts := b.Config.layout()
+	roles := b.Config.roles()
 	i := &identity{Installation: b.Installation, Files: map[string][]byte{}}
 	ready := false
 	defer func() {
@@ -40,7 +42,7 @@ func loadIdentity(ctx context.Context, d *directory, b binding, now time.Time, p
 			return nil, err
 		}
 		defer clear(data)
-		if json.Unmarshal(data, i) != nil || i.Installation != b.Installation || len(i.Files) != 8 {
+		if json.Unmarshal(data, i) != nil || i.Installation != b.Installation || len(i.Files) != 2*len(roles) {
 			return nil, ErrState
 		}
 		canonical, err := json.Marshal(i)
@@ -59,11 +61,11 @@ func loadIdentity(ctx context.Context, d *directory, b binding, now time.Time, p
 		}
 		var authority *x509.Certificate
 		var authorityKey crypto.Signer
-		for index, role := range []string{"authority", "console", "broker", "gateway"} {
+		for _, role := range roles {
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
-			keyPath, certPath := artifacts[2*index], artifacts[2*index+1]
+			keyPath, certPath := identityPaths(role)
 			data, err := newKey(role == "console")
 			if err != nil {
 				return nil, ErrCertificate
@@ -89,8 +91,9 @@ func loadIdentity(ctx context.Context, d *directory, b binding, now time.Time, p
 	}
 	var authority *x509.Certificate
 	seen := map[[32]byte]bool{}
-	for index, role := range []string{"authority", "console", "broker", "gateway"} {
-		key, err := readKey(i.Files[artifacts[2*index]], role == "console")
+	for _, role := range roles {
+		keyPath, certPath := identityPaths(role)
+		key, err := readKey(i.Files[keyPath], role == "console")
 		if err != nil {
 			return nil, err
 		}
@@ -103,7 +106,7 @@ func loadIdentity(ctx context.Context, d *directory, b binding, now time.Time, p
 			return nil, ErrCertificate
 		}
 		seen[fingerprint] = true
-		cert, err := validateCertificate(b, role, i.Files[artifacts[2*index+1]], key, authority, now)
+		cert, err := validateCertificate(b, role, i.Files[certPath], key, authority, now)
 		if err != nil {
 			return nil, err
 		}

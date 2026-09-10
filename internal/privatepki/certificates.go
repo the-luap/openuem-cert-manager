@@ -84,6 +84,9 @@ func template(b binding, role string) *x509.Certificate {
 	case "broker":
 		t.DNSNames = slices.Clone(b.Config.BrokerNames)
 		t.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
+	case "database":
+		t.DNSNames = slices.Clone(b.Config.DatabaseNames)
+		t.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
 	case "gateway":
 		t.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}
 	}
