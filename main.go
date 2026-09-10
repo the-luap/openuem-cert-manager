@@ -25,7 +25,7 @@ func main() {
 // TODO Generate TOML, INI or similar file to store organizations information
 
 func getCommands() []*cli.Command {
-	return []*cli.Command{
+	return append([]*cli.Command{
 		commands.SetupIndividualBroker(),
 		commands.CreateClientCertificate(),
 		commands.CreateUserCertificate(),
@@ -34,5 +34,5 @@ func getCommands() []*cli.Command {
 		commands.CreateServerCertificate(),
 		commands.GetCertificateSerial(),
 		commands.CreateCodeSigningCertificate(),
-	}
+	}, commands.PlatformSetupCommands()...)
 }

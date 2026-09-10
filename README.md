@@ -4,6 +4,11 @@ Repository containing the OpenUEM certificate tools used to manage the project's
 
 This repository will be used as a git submodule from other OpenUEM's repositories
 
+The [private backend PKI initializer](docs/private-pki.md) creates and preserves
+separate gateway, console and broker identities for the one-port reference
+installation. [Individual broker setup](docs/individual-broker.md) initializes
+its separately protected service NKeys and stock NATS configuration.
+
 References:
 
 - [OCSP RFC 6960](https://datatracker.ietf.org/doc/html/rfc6960)

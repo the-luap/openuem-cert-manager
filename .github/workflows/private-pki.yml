@@ -1,0 +1,69 @@
+name: Private PKI initialization
+
+on:
+  pull_request:
+  push:
+    branches: [main, 'feature/**']
+
+permissions:
+  contents: read
+
+jobs:
+  private-pki:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: the-luap/openuem-console
+          ref: 1f7a657c6c5a49ae5d296409ab13d372be4fb855
+          path: .gateway-source
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.8'
+          cache: false
+      - name: Test retained identities, interrupted exports and real TLS
+        run: |
+          go test -mod=readonly -race -p=1 ./internal/privatepki ./internal/commands
+          go vet -mod=readonly ./internal/privatepki ./internal/commands
+      - name: Build the pinned gateway and separate initializer runtime
+        run: |
+          set -euo pipefail
+          docker build -f .gateway-source/Dockerfile.gateway --target runtime \
+            -t openuem-gateway:reference-test .gateway-source
+          docker build -f Dockerfile.private-pki --target runtime -t private-pki-runtime:check .
+          docker build -f Dockerfile.private-pki --target smoke -t private-pki-smoke:check .
+      - name: Run actual initialization and gateway with no external networking
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --add-host console.internal:127.0.0.1 \
+            --read-only --cap-drop ALL --security-opt no-new-privileges \
+            --pids-limit 96 --memory 256m \
+            --tmpfs /tmp:rw,nosuid,nodev,noexec,size=32m \
+            private-pki-smoke:check | tee private-pki-smoke.log
+          grep -q '^--- PASS: TestPrivatePKIContainerGateway ' private-pki-smoke.log
+      - name: Verify the distribution has no private material or test executable
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --read-only --cap-drop ALL \
+            --security-opt no-new-privileges private-pki-runtime:check private-pki --help
+          test "$(docker image inspect --format '{{.Config.User}}' private-pki-runtime:check)" = '65532:65532'
+          test "$(docker image inspect --format '{{json .Config.ExposedPorts}}' private-pki-runtime:check)" = 'null'
+          container=$(docker create private-pki-runtime:check private-pki --help)
+          trap 'docker rm -f "$container" >/dev/null' EXIT
+          docker export "$container" -o private-pki-runtime.tar
+          tar -tf private-pki-runtime.tar > private-pki-runtime-files.txt
+          grep -qx 'openuem-cert-manager' private-pki-runtime-files.txt
+          grep -qx 'licenses/openuem-cert-manager.LICENSE' private-pki-runtime-files.txt
+          if grep -Eq '(^|/)(private-pki\.test|openuem-gateway|sh|bash|go\.mod|go\.sum|identity\.json|.*\.(pem|key|seed|pfx))$' private-pki-runtime-files.txt; then
+            echo 'Runtime contains test, shell, source or credential material'
+            exit 1
+          fi

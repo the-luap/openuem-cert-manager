@@ -1,0 +1,43 @@
+ARG GATEWAY_IMAGE=openuem-gateway:reference-test
+FROM ${GATEWAY_IMAGE} AS gateway-fixture
+
+FROM --platform=$BUILDPLATFORM golang:1.26.8-bookworm@sha256:9fdc884aacc3bec89b20ffc69f4bb369c78210e3e4f600387b5128b12c199f81 AS build
+WORKDIR /src
+ENV GOTOOLCHAIN=local
+COPY go.mod go.sum main.go ./
+COPY internal/commands ./internal/commands
+COPY internal/models ./internal/models
+COPY internal/broker ./internal/broker
+COPY internal/privatepki ./internal/privatepki
+ARG TARGETOS
+ARG TARGETARCH
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+    go build -mod=readonly -trimpath -buildvcs=false -ldflags='-s -w' -o /out/openuem-cert-manager .
+
+FROM build AS test-build
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+    go test -mod=readonly -trimpath -buildvcs=false -c -o /out/private-pki.test ./internal/privatepki
+
+FROM scratch AS runtime
+COPY --from=build /out/openuem-cert-manager /openuem-cert-manager
+COPY LICENSE /licenses/openuem-cert-manager.LICENSE
+USER 65532:65532
+STOPSIGNAL SIGTERM
+ENTRYPOINT ["/openuem-cert-manager"]
+CMD ["private-pki"]
+
+# The additional executable is built from the console commit pinned by CI.
+# It is used only for cross-process private TLS acceptance, never distributed.
+FROM runtime AS smoke
+COPY --from=gateway-fixture /openuem-gateway /openuem-gateway
+COPY --from=test-build /out/private-pki.test /private-pki.test
+ENV OPENUEM_PRIVATE_PKI_TEST_BINARY=/openuem-cert-manager
+ENV OPENUEM_GATEWAY_TEST_BINARY=/openuem-gateway
+ENTRYPOINT ["/private-pki.test"]
+CMD ["-test.v", "-test.run=^TestPrivatePKIContainerGateway$", "-test.timeout=30s"]
+
+FROM runtime AS final
