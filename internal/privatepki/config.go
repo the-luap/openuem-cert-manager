@@ -20,11 +20,12 @@ var (
 )
 
 type Config struct {
-	Version       int      `json:"version"`
-	Name          string   `json:"name"`
-	ConsoleNames  []string `json:"console_names"`
-	BrokerNames   []string `json:"broker_names"`
-	DatabaseNames []string `json:"database_names,omitempty"`
+	Version                int      `json:"version"`
+	Name                   string   `json:"name"`
+	ConsoleNames           []string `json:"console_names"`
+	BrokerNames            []string `json:"broker_names"`
+	DatabaseNames          []string `json:"database_names,omitempty"`
+	AdministratorAuthority bool     `json:"administrator_authority,omitempty"`
 }
 
 var label = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`)

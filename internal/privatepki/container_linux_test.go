@@ -38,7 +38,7 @@ func TestPrivatePKIContainerGateway(t *testing.T) {
 	defer cancel()
 	path, _ := fixture(t)
 	run := func() error {
-		command := exec.CommandContext(ctx, initializer, "private-pki", "--directory", path, "--database-dns", "database.internal")
+		command := exec.CommandContext(ctx, initializer, "private-pki", "--directory", path, "--database-dns", "database.internal", "--administrator-authority")
 		output, err := command.CombinedOutput()
 		if bytes.Contains(output, []byte("PRIVATE KEY")) {
 			t.Fatal("initializer printed private material")
@@ -48,6 +48,7 @@ func TestPrivatePKIContainerGateway(t *testing.T) {
 	if err := run(); err != nil {
 		t.Fatal("actual initializer failed", err)
 	}
+	administratorRoots(t, path)
 	if _, err := tls.LoadX509KeyPair(filepath.Join(path, "database/server.pem"), filepath.Join(path, "database/server.key")); err != nil {
 		t.Fatal("actual initializer did not export a usable separate database identity")
 	}

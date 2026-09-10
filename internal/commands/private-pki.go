@@ -21,11 +21,12 @@ func PlatformSetupCommands() []*cli.Command {
 			&cli.StringSliceFlag{Name: "console-dns", Value: cli.NewStringSlice("console.internal"), Usage: "Private DNS names used for console, login and MDM backends"},
 			&cli.StringSliceFlag{Name: "broker-dns", Value: cli.NewStringSlice("nats.internal"), Usage: "Private DNS names used for the individual-agent broker"},
 			&cli.StringSliceFlag{Name: "database-dns", Usage: "Optional distinct private DNS names for a PostgreSQL server identity; bind only when creating new PKI state"},
+			&cli.BoolFlag{Name: "administrator-authority", Usage: "Generate a separate offline administrator CA and public trust export; bind only when creating new PKI state"},
 		},
 		Action: func(ctx *cli.Context) error {
 			request, stop := signal.NotifyContext(ctx.Context, os.Interrupt, syscall.SIGTERM)
 			defer stop()
-			_, err := privatepki.Initialize(request, ctx.String("directory"), privatepki.Config{Version: 1, Name: ctx.String("name"), ConsoleNames: ctx.StringSlice("console-dns"), BrokerNames: ctx.StringSlice("broker-dns"), DatabaseNames: ctx.StringSlice("database-dns")})
+			_, err := privatepki.Initialize(request, ctx.String("directory"), privatepki.Config{Version: 1, Name: ctx.String("name"), ConsoleNames: ctx.StringSlice("console-dns"), BrokerNames: ctx.StringSlice("broker-dns"), DatabaseNames: ctx.StringSlice("database-dns"), AdministratorAuthority: ctx.Bool("administrator-authority")})
 			if err != nil {
 				return err
 			}

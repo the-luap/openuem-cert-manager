@@ -6,9 +6,10 @@ CA and each service key locally, preserves exact identities on retry, and export
 separate service directories. It needs no OpenSSL command, database, network
 access or existing certificate files.
 
-This component covers backend PKI preparation. The complete reference composition,
-first-administrator setup, administrator/device authorities, automatic private
-certificate rotation and enterprise CA import remain separate work. Public TLS
+This component covers backend PKI preparation and optional independent administrator
+CA generation. The complete setup wizard, administrator certificate issuance/status
+service, device authorities, automatic private certificate rotation and enterprise
+CA import remain separate work. Public TLS
 uses the console repository's DNS-01 issuer; these private certificates are not
 public HTTPS certificates or shared endpoint credentials.
 
@@ -53,6 +54,27 @@ configuration format and exported files. Database names are bound with the other
 configuration: adding, removing or changing them in an existing initialization
 directory is rejected. This option does not migrate a previously initialized PKI.
 
+`--administrator-authority` optionally generates a second, independent self-signed
+CA when creating fresh PKI state. It has its own P-256 key, distinct subject and
+serial, ten-year lifetime and a zero subordinate-CA path length. It is not signed
+by the backend CA and shares no key with any service. The default remains disabled
+and preserves the previous configuration encoding and layout. Once bound, enabling
+or disabling this option in existing state is rejected; it is not a migration or
+rotation switch.
+
+The initializer exports the administrator CA public certificate as
+`trust/administrator-ca.pem`, for the console's administrator-certificate trust.
+Keep `administrator-authority/ca.key` offline with the protected initialization
+state. Never mount this key into the console, gateway, broker or worker, and never
+substitute backend public trust for administrator trust. A backend service identity
+must not become a console user identity merely because it has a valid certificate.
+
+This option creates no administrator client certificate, account, grant or OCSP
+responder and installs no host trust. Initial password authentication remains the
+separate protected bootstrap workflow. Administrator certificate issuance, account
+binding, status/revocation delivery and renewal require their own operations before
+certificate login can be enabled as a complete reference deployment workflow.
+
 The native command is available on Linux and macOS. Windows deployment hosts use
 the Linux container. Native Windows builds retain the existing certificate-manager
 commands. The initializer opens no listener and installs nothing into host trust.
@@ -66,11 +88,12 @@ SHA-256 hashes of every exported file. Do not start a service from a partial exp
 | Directory | Contents and consumer |
 | --- | --- |
 | `authority/` | Backend CA certificate and private key; keep offline with initialization state |
+| `administrator-authority/` | Optional independent administrator CA certificate/key; keep offline with initialization state |
 | `gateway/` | Gateway client certificate/key and backend CA public certificate; gateway only |
 | `console/` | Console/auth/MDM backend server certificate/key and exact gateway leaf trust |
 | `broker/` | NATS backend server certificate/key and exact gateway leaf trust |
 | `database/` | Optional PostgreSQL server certificate and separate private key; PostgreSQL only |
-| `trust/` | Backend CA public certificate for private NATS service connections |
+| `trust/` | Backend public CA for private services; optional separate `administrator-ca.pem` for console administrator trust; mount only each selected file |
 
 Mount each consumer's own directory read-only. The root `identity.json` contains
 all original private keys and certificates; it is initialization/backup material,
@@ -175,6 +198,14 @@ isolated PostgreSQL suite uses the actual private PKI executable together with i
 actual database bootstrap command and normal schema migration. This tests the
 generated PKCS#8 key against PostgreSQL itself, password separation, hostname
 verification, restart and blocked-query process cancellation.
+
+Administrator authority tests verify separate self-signed roots, exact retries,
+unchanged legacy encoding, rejection of configuration changes, interrupted exports,
+missing committed material and an administrator CA cross-signed by the backend.
+A real TLS listener admits the synthetic administrator client and rejects the
+backend gateway identity. The smoke fixture enables the option in the actual
+distribution command and checks its exported trust and exact restart identity.
+These tests do not claim administrator account issuance or deployed OCSP acceptance.
 
 The separate smoke target runs the actual initializer and the actual pinned console
 gateway against a local TLS backend. It verifies CA-issued gateway selection,

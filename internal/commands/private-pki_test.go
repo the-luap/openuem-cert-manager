@@ -80,3 +80,38 @@ func TestPrivatePKICLIDatabaseIdentity(t *testing.T) {
 		t.Fatal("CLI accepted omission of committed database names")
 	}
 }
+
+func TestPrivatePKICLIAdministratorAuthority(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "pki")
+	var output bytes.Buffer
+	run := func(enabled bool) error {
+		app := &cli.App{Commands: PlatformSetupCommands(), Writer: &output, ErrWriter: &output}
+		args := []string{"cert-manager", "private-pki", "--directory", path}
+		if enabled {
+			args = append(args, "--administrator-authority")
+		}
+		return app.Run(args)
+	}
+	if err := run(true); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(filepath.Join(path, "administrator-authority/ca.key"))
+	if err != nil {
+		t.Fatal("administrator CLI did not export its protected authority")
+	}
+	defer clear(before)
+	if err := run(true); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(filepath.Join(path, "administrator-authority/ca.key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clear(after)
+	if !bytes.Equal(before, after) || strings.Contains(output.String(), "PRIVATE KEY") {
+		t.Fatal("CLI replaced or exposed an administrator authority key")
+	}
+	if err := run(false); err == nil {
+		t.Fatal("CLI accepted omission of the committed administrator authority")
+	}
+}

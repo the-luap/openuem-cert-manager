@@ -74,7 +74,7 @@ func template(b binding, role string) *x509.Certificate {
 		NotBefore: b.CreatedAt.Add(-5 * time.Minute), NotAfter: b.CreatedAt.AddDate(1, 0, 0),
 		BasicConstraintsValid: true, KeyUsage: x509.KeyUsageDigitalSignature}
 	switch role {
-	case "authority":
+	case "authority", "administrator-authority":
 		t.IsCA, t.MaxPathLenZero = true, true
 		t.NotAfter = b.CreatedAt.AddDate(10, 0, 0)
 		t.KeyUsage = x509.KeyUsageCertSign | x509.KeyUsageCRLSign
@@ -100,6 +100,11 @@ func issue(b binding, role string, key crypto.Signer, authority *x509.Certificat
 		return nil, ErrCertificate
 	}
 	t.SerialNumber = serial
+	// Administrator trust is an independent self-signed root. The backend CA
+	// must not be trusted to authenticate a console administrator.
+	if role == "administrator-authority" {
+		authority = nil
+	}
 	if authority == nil {
 		authority, authorityKey = t, key
 	}
@@ -130,7 +135,7 @@ func validateCertificate(b binding, role string, data []byte, key crypto.Signer,
 		cert.SerialNumber.Sign() <= 0 || cert.SerialNumber.BitLen() > 159 || now.Before(cert.NotBefore) || !now.Before(cert.NotAfter) {
 		return nil, ErrCertificate
 	}
-	if authority == nil {
+	if authority == nil || role == "administrator-authority" {
 		authority = cert
 	}
 	if cert.CheckSignatureFrom(authority) != nil {
@@ -142,7 +147,7 @@ func validateCertificate(b binding, role string, data []byte, key crypto.Signer,
 	if role == "gateway" {
 		usage = x509.ExtKeyUsageClientAuth
 	}
-	if role == "authority" {
+	if role == "authority" || role == "administrator-authority" {
 		usage = x509.ExtKeyUsageAny
 	}
 	if _, err := cert.Verify(x509.VerifyOptions{Roots: roots, CurrentTime: now, KeyUsages: []x509.ExtKeyUsage{usage}}); err != nil {
