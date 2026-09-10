@@ -82,8 +82,9 @@ func PlanUpgrade(ctx context.Context, directory string) (UpgradePlan, error) {
 // Upgrade installs the reviewed worker grant while retaining the exact original
 // keys, listeners, TLS references and JetStream path. expected is the preview's
 // before_sha256. A private journal and original configuration survive a crash.
-// The command does not signal/restart NATS: deployments must recreate a broker
-// whose configuration is mounted as a single file to observe the new inode.
+// The command does not signal/restart NATS. Deployments must reopen and verify
+// the mounted configuration before reporting readiness; bind mount behavior
+// across atomic replacement depends on the container runtime.
 func Upgrade(ctx context.Context, directory, expected string) (UpgradePlan, error) {
 	return upgrade(ctx, directory, expected, nil)
 }

@@ -42,10 +42,12 @@ openuem-cert-manager individual-broker-upgrade \
 Start the broker with its existing JetStream volume and unchanged service keys,
 and verify authenticated readiness and consumer reconciliation before returning
 the deployment to service. When `broker.json` is a single-file container bind
-mount, recreate the broker container so it opens the new inode. Restarting the
-same container or sending a reload signal is not the publication mechanism for
-this layout. The command does not perform container orchestration, prove an
-installed broker is stopped or configure host firewall rules.
+mount, verify that the mounted file matches `after_sha256`; remount or recreate
+the broker if the runtime still exposes the old file. Bind mount behavior across
+atomic replacement depends on the container runtime. A reload signal alone does
+not prove that the process read the new configuration. The command does not
+perform container orchestration, prove an installed broker is stopped or
+configure host firewall rules.
 
 The private PKI distribution image also includes this command. Run it offline,
 non-root, with the existing provisioning directory as its only writable bind and
