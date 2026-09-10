@@ -56,9 +56,18 @@ a separate reviewed reconfiguration/rotation operation.
 
 The command produces no secrets on stdout or in command-line arguments. It does
 not replace organization enrollment CAs, Apple push credentials or public HTTPS
-certificates. It pins the published shared-library commit `5083e68c8f76`, whose
-[CI passed](https://github.com/the-luap/openuem-nats/actions/runs/34172946043), including
-native Windows credential creation/ACL checks and the actual NATS configuration test.
+certificates. It pins the published shared-library commit `87aa1bdf56ea`, whose
+[CI passed](https://github.com/the-luap/openuem-nats/actions/runs/34523652815). This
+matches the current console/worker protocol, including the separate `hardware`,
+`recovery` and `rotation` request subjects. A regression test verifies the exact
+worker subscription grant; the preceding initializer pin omitted these subjects
+and could not start the current worker against its generated configuration.
+
+This change affects newly generated configuration. An ordinary initialization
+retry still rejects a changed installed `broker.json` and never rewrites it or
+rotates its service identities. Existing configurations require a deliberate
+configuration update that retains their keys and JetStream state; automatic
+upgrade/reload orchestration remains separate work.
 
 Run `go test ./internal/broker ./internal/commands` to verify protected creation,
 partial setup recovery, unchanged retries, conflicting settings, missing installed

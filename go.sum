@@ -89,8 +89,8 @@ github.com/stretchr/testify v1.8.0/go.mod h1:yNjHg4UonilssWZ8iaSj1OCr/vHnekPRkoO
 github.com/stretchr/testify v1.8.4/go.mod h1:sz/lmYIOXD/1dqDmKjjqLyZ2RngseejIcXlSw2iwfAo=
 github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
-github.com/the-luap/openuem-nats v0.11.1-0.20260908001929-5083e68c8f76 h1:j0YsqG9UX73f/+QXVLxB4dxxUiFzdzo5LDbA0Z096iQ=
-github.com/the-luap/openuem-nats v0.11.1-0.20260908001929-5083e68c8f76/go.mod h1:Y5Zz2a4L7Tu2EUixIE9y8O+N7cJcPxP4xTFZZEZ4mX0=
+github.com/the-luap/openuem-nats v0.11.1-0.20260910195931-87aa1bdf56ea h1:7H+2gfJrTXe8XEl1L3wTnCbdawqmkv+srNy4aYxLBZ0=
+github.com/the-luap/openuem-nats v0.11.1-0.20260910195931-87aa1bdf56ea/go.mod h1:GWRchq7CFK1F+ELrC4N7OeOptBGvaJbBwjdR6JS1aQc=
 github.com/urfave/cli/v2 v2.27.7 h1:bH59vdhbjLv3LAvIu6gd0usJHgoTTPhCFib8qqOwXYU=
 github.com/urfave/cli/v2 v2.27.7/go.mod h1:CyNAG/xg+iAOg0N4MPGZqVmv2rCoP267496AOXUZjA4=
 github.com/xrash/smetrics v0.0.0-20250705151800-55b8f293f342 h1:FnBeRrxr7OU4VvAzt5X7s6266i6cSVkkFPS0TuXWbIg=

@@ -2,9 +2,11 @@ package broker
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -12,6 +14,56 @@ import (
 	"github.com/open-uem/nats/enrollment"
 	"github.com/open-uem/nats/enrollment/keyfile"
 )
+
+func TestSetupIncludesCurrentWorkerSubjects(t *testing.T) {
+	directory := filepath.Join(t.TempDir(), "broker")
+	path, err := Initialize(directory, setupConfig(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	seed, err := keyfile.Read(filepath.Join(directory, "worker-user.seed"), 512)
+	if err != nil {
+		t.Fatal("worker identity is unavailable")
+	}
+	defer clear(seed)
+	key, err := nkeys.FromSeed(seed)
+	if err != nil {
+		t.Fatal("worker identity is invalid")
+	}
+	defer key.Wipe()
+	public, _ := key.PublicKey()
+	var configuration struct {
+		Accounts map[string]struct {
+			Users []struct {
+				Nkey        string
+				Permissions struct{ Subscribe []string }
+			}
+		}
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || json.Unmarshal(data, &configuration) != nil {
+		t.Fatal("generated broker configuration is unreadable")
+	}
+	wanted := []string{"report", "hardware", "recovery", "rotation", "deployresult", "agentconfig",
+		"wingetcfg.profiles", "ansiblecfg.profiles", "wingetcfg.deploy", "wingetcfg.exclude", "wingetcfg.report"}
+	for i := range wanted {
+		wanted[i] = "uem.v1.agent.*.request." + wanted[i]
+	}
+	slices.Sort(wanted)
+	found := 0
+	for _, user := range configuration.Accounts["UEM_DEVICES"].Users {
+		if user.Nkey == public {
+			found++
+			slices.Sort(user.Permissions.Subscribe)
+			if !slices.Equal(user.Permissions.Subscribe, wanted) {
+				t.Fatal("generated worker subscriptions omit or broaden the current RPC contract")
+			}
+		}
+	}
+	if found != 1 {
+		t.Fatal("generated broker configuration has an ambiguous worker identity")
+	}
+}
 
 func setupConfig(t *testing.T) enrollment.BrokerConfiguration {
 	t.Helper()
