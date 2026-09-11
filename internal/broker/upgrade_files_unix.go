@@ -107,7 +107,7 @@ func (d *upgradeDirectory) inventory() (map[string]bool, error) {
 		return nil, ErrUpgrade
 	}
 	defer file.Close()
-	names := append([]string{"broker.json", upgradeLock, upgradeJournal, upgradeBackup, upgradeNext, upgradeComplete}, serviceSeeds...)
+	names := append([]string{"broker.json", upgradeLock, upgradeJournal, upgradeBackup, upgradeNext, upgradeComplete, priorJournal, priorBackup, priorNext, priorComplete}, serviceSeeds...)
 	entries, err := file.ReadDir(len(names) + 1)
 	if err != nil && err != io.EOF || len(entries) > len(names) {
 		return nil, ErrUpgrade

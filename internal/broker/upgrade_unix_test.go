@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -74,12 +75,142 @@ func upgradeFiles(t *testing.T, directory string) map[string]string {
 	return result
 }
 
+func previousUpgradeFixture(t *testing.T, completed bool) (string, []byte) {
+	t.Helper()
+	directory, _, target := upgradeFixture(t)
+	previous, err := workerGrant(target, previousOperations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if completed {
+		original, err := os.ReadFile(filepath.Join(directory, "broker.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		record, _ := json.Marshal(upgradeRecord{Version: 1, Before: digest(original), After: digest(previous)})
+		for name, data := range map[string][]byte{priorJournal: record, priorBackup: original, priorComplete: record} {
+			if err := os.WriteFile(filepath.Join(directory, name), data, 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := os.WriteFile(filepath.Join(directory, "broker.json"), previous, 0600); err != nil {
+		t.Fatal(err)
+	}
+	return directory, target
+}
+
+func TestBrokerSoftwareUpgradeRetainsPreviousGrantAndCompletedHistory(t *testing.T) {
+	for _, completed := range []bool{false, true} {
+		for _, stop := range []string{upgradeJournal, upgradeBackup, upgradeNext, "broker.json", upgradeComplete} {
+			t.Run(fmt.Sprintf("completed=%t/%s", completed, stop), func(t *testing.T) {
+				directory, target := previousUpgradeFixture(t, completed)
+				before := upgradeFiles(t, directory)
+				original, _ := os.ReadFile(filepath.Join(directory, "broker.json"))
+				plan, err := PlanUpgrade(t.Context(), directory)
+				if err != nil || plan.Version != 2 || !plan.ChangeRequired || plan.Before != digest(original) || plan.After != digest(target) || !slices.Equal(plan.AddedWorkerRequests, []string{"software"}) {
+					t.Fatal("previous grant preview is incorrect", err)
+				}
+				if !reflect.DeepEqual(before, upgradeFiles(t, directory)) {
+					t.Fatal("preview wrote files")
+				}
+				interrupted := errors.New("synthetic software upgrade interruption")
+				_, err = upgrade(t.Context(), directory, plan.Before, func(name string) error {
+					if name == stop {
+						return interrupted
+					}
+					return nil
+				})
+				if !errors.Is(err, interrupted) {
+					t.Fatal("interruption not exercised", err)
+				}
+				for range 2 {
+					if _, err := Upgrade(t.Context(), directory, plan.Before); err != nil {
+						t.Fatal("resume/retry failed", err)
+					}
+				}
+				actual, _ := os.ReadFile(filepath.Join(directory, "broker.json"))
+				backup, _ := os.ReadFile(filepath.Join(directory, upgradeBackup))
+				if !bytes.Equal(actual, target) || !bytes.Equal(backup, original) {
+					t.Fatal("configuration or backup changed")
+				}
+				after := upgradeFiles(t, directory)
+				for name, value := range before {
+					if name != "broker.json" && after[name] != value {
+						t.Fatal("retained identity or prior history changed", name)
+					}
+				}
+				if _, err := Upgrade(t.Context(), directory, plan.After); err != nil {
+					t.Fatal("current review failed", err)
+				}
+			})
+		}
+	}
+}
+
+func TestBrokerSoftwareUpgradeRejectsAlteredPreviousContract(t *testing.T) {
+	for _, kind := range []string{"missing journal", "missing backup", "missing completion", "staging", "bad journal", "bad backup", "bad completion", "rollback", "extra operation", "missing operation", "reordered operations"} {
+		t.Run(kind, func(t *testing.T) {
+			directory, target := previousUpgradeFixture(t, true)
+			write := func(name string, data []byte) {
+				t.Helper()
+				if err := os.WriteFile(filepath.Join(directory, name), data, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			switch kind {
+			case "missing journal", "missing backup", "missing completion":
+				name := map[string]string{"missing journal": priorJournal, "missing backup": priorBackup, "missing completion": priorComplete}[kind]
+				if err := os.Remove(filepath.Join(directory, name)); err != nil {
+					t.Fatal(err)
+				}
+			case "staging":
+				write(priorNext, target)
+			case "bad journal":
+				write(priorJournal, []byte(`{}`))
+			case "bad backup":
+				write(priorBackup, []byte(`{}`))
+			case "bad completion":
+				write(priorComplete, []byte(`{}`))
+			case "rollback":
+				original, _ := precedingWorkerGrant(target)
+				write("broker.json", original)
+			default:
+				operations := slices.Clone(previousOperations)
+				switch kind {
+				case "extra operation":
+					operations = append(operations, ">")
+				case "missing operation":
+					operations = operations[1:]
+				case "reordered operations":
+					operations[0], operations[1] = operations[1], operations[0]
+				}
+				altered, err := workerGrant(target, operations)
+				if err != nil {
+					t.Fatal(err)
+				}
+				write("broker.json", altered)
+			}
+			before := upgradeFiles(t, directory)
+			if _, err := PlanUpgrade(t.Context(), directory); err == nil {
+				t.Fatal("altered previous contract preview accepted")
+			}
+			if _, err := Upgrade(t.Context(), directory, strings.Repeat("a", 64)); err == nil {
+				t.Fatal("altered previous contract accepted")
+			}
+			if !reflect.DeepEqual(before, upgradeFiles(t, directory)) {
+				t.Fatal("rejection changed retained files")
+			}
+		})
+	}
+}
+
 func TestBrokerUpgradeRetainsIdentityAndOnlyAddsCurrentWorkerRequests(t *testing.T) {
 	directory, config, target := upgradeFixture(t)
 	before := upgradeFiles(t, directory)
 	original, _ := os.ReadFile(filepath.Join(directory, "broker.json"))
 	plan, err := PlanUpgrade(t.Context(), directory)
-	if err != nil || !plan.ChangeRequired || plan.Before != digest(original) || plan.After != digest(target) || !slices.Equal(plan.AddedWorkerRequests, []string{"hardware", "recovery", "rotation"}) {
+	if err != nil || !plan.ChangeRequired || plan.Before != digest(original) || plan.After != digest(target) || !slices.Equal(plan.AddedWorkerRequests, []string{"hardware", "recovery", "rotation", "software"}) {
 		t.Fatal("invalid upgrade preview", err)
 	}
 	if !reflect.DeepEqual(before, upgradeFiles(t, directory)) {
@@ -106,7 +237,7 @@ func TestBrokerUpgradeRetainsIdentityAndOnlyAddsCurrentWorkerRequests(t *testing
 		return doc["accounts"].(map[string]any)["UEM_DEVICES"].(map[string]any)["users"].([]any)[0].(map[string]any)["permissions"].(map[string]any)
 	}
 	got := permissions(newDoc)["subscribe"].([]any)
-	want := []string{"report", "hardware", "recovery", "rotation", "deployresult", "agentconfig", "wingetcfg.profiles", "ansiblecfg.profiles", "wingetcfg.deploy", "wingetcfg.exclude", "wingetcfg.report"}
+	want := []string{"report", "hardware", "recovery", "rotation", "software", "deployresult", "agentconfig", "wingetcfg.profiles", "ansiblecfg.profiles", "wingetcfg.deploy", "wingetcfg.exclude", "wingetcfg.report"}
 	if len(got) != len(want) {
 		t.Fatal("unexpected worker rights")
 	}

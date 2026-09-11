@@ -47,6 +47,12 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@v4
         with:
+          repository: the-luap/openuem-cert-manager
+          ref: 633bc7bb0dc34c1240a72a9df25c74ad19451885
+          path: .previous-source
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
           repository: the-luap/openuem-console
           ref: aadf9c3ffa52e623998bbfd04a87dbc33387c610
           path: .broker-source
@@ -56,6 +62,8 @@ jobs:
           set -euo pipefail
           docker build -f .legacy-source/Dockerfile.private-pki --target runtime \
             -t openuem-private-pki:legacy-upgrade-test .legacy-source
+          docker build -f .previous-source/Dockerfile.private-pki --target runtime \
+            -t openuem-private-pki:previous-upgrade-test .previous-source
           docker build -f Dockerfile.private-pki --target runtime \
             -t openuem-private-pki:upgrade-test .
           docker build -f .broker-source/Dockerfile.broker --target runtime \

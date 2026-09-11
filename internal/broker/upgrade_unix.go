@@ -19,13 +19,20 @@ var ErrUpgrade = errors.New("broker upgrade requires an unchanged supported conf
 var ErrUpgradeLocked = errors.New("another broker configuration upgrade holds the directory lease")
 
 var serviceSeeds = []string{"authorization-issuer.seed", "authorization-user.seed", "revocation-user.seed", "worker-user.seed", "console-user.seed", "provisioner-user.seed"}
-var upgradedOperations = []string{"report", "hardware", "recovery", "rotation", "deployresult", "agentconfig", "wingetcfg.profiles", "ansiblecfg.profiles", "wingetcfg.deploy", "wingetcfg.exclude", "wingetcfg.report"}
+var originalOperations = []string{"report", "deployresult", "agentconfig", "wingetcfg.profiles", "ansiblecfg.profiles", "wingetcfg.deploy", "wingetcfg.exclude", "wingetcfg.report"}
+var previousOperations = []string{"report", "hardware", "recovery", "rotation", "deployresult", "agentconfig", "wingetcfg.profiles", "ansiblecfg.profiles", "wingetcfg.deploy", "wingetcfg.exclude", "wingetcfg.report"}
+var upgradedOperations = []string{"report", "hardware", "recovery", "rotation", "software", "deployresult", "agentconfig", "wingetcfg.profiles", "ansiblecfg.profiles", "wingetcfg.deploy", "wingetcfg.exclude", "wingetcfg.report"}
 
-const upgradeJournal = "broker-upgrade-v1.json"
-const upgradeBackup = "broker-before-v1.json"
-const upgradeNext = "broker-next-v1.json"
-const upgradeComplete = "broker-upgrade-v1.complete.json"
+const upgradeJournal = "broker-upgrade-v2.json"
+const upgradeBackup = "broker-before-v2.json"
+const upgradeNext = "broker-next-v2.json"
+const upgradeComplete = "broker-upgrade-v2.complete.json"
 const upgradeLock = "broker-upgrade.lock"
+
+const priorJournal = "broker-upgrade-v1.json"
+const priorBackup = "broker-before-v1.json"
+const priorNext = "broker-next-v1.json"
+const priorComplete = "broker-upgrade-v1.complete.json"
 
 type UpgradePlan struct {
 	Version             int      `json:"version"`
@@ -41,7 +48,10 @@ type upgradeRecord struct {
 	After   string `json:"after_sha256"`
 }
 
-type upgradeSnapshot struct{ current, legacy, target []byte }
+type upgradeSnapshot struct {
+	current, legacy, target []byte
+	added                   []string
+}
 
 func digest(data []byte) string { hash := sha256.Sum256(data); return hex.EncodeToString(hash[:]) }
 func validDigest(value string) bool {
@@ -50,15 +60,15 @@ func validDigest(value string) bool {
 }
 
 func (s upgradeSnapshot) plan() UpgradePlan {
-	plan := UpgradePlan{Version: 1, Before: digest(s.current), After: digest(s.target), ChangeRequired: !bytes.Equal(s.current, s.target), AddedWorkerRequests: []string{}}
+	plan := UpgradePlan{Version: 2, Before: digest(s.current), After: digest(s.target), ChangeRequired: !bytes.Equal(s.current, s.target), AddedWorkerRequests: []string{}}
 	if plan.ChangeRequired {
-		plan.AddedWorkerRequests = []string{"hardware", "recovery", "rotation"}
+		plan.AddedWorkerRequests = slices.Clone(s.added)
 	}
 	return plan
 }
 
 // PlanUpgrade reads existing configuration and identities without creating or
-// changing any file. Only the known preceding worker grant and the current exact
+// changing any file. Only the two known preceding worker grants and the current exact
 // generated configuration are recognized; custom changes are never merged.
 func PlanUpgrade(ctx context.Context, directory string) (UpgradePlan, error) {
 	if err := ctx.Err(); err != nil {
@@ -118,7 +128,7 @@ func upgrade(ctx context.Context, directory, expected string, afterWrite func(st
 	if err != nil {
 		return UpgradePlan{}, err
 	}
-	record := upgradeRecord{Version: 1, Before: digest(state.legacy), After: digest(state.target)}
+	record := upgradeRecord{Version: 2, Before: digest(state.legacy), After: digest(state.target)}
 	encoded, _ := json.Marshal(record)
 	if !present[upgradeJournal] {
 		if present[upgradeBackup] || present[upgradeNext] || present[upgradeComplete] || expected != digest(state.current) {
@@ -199,12 +209,13 @@ func upgrade(ctx context.Context, directory, expected string, afterWrite func(st
 	if err != nil || !bytes.Equal(final.current, state.target) {
 		return UpgradePlan{}, ErrUpgrade
 	}
-	return UpgradePlan{Version: 1, Before: expected, After: record.After, ChangeRequired: false, AddedWorkerRequests: []string{}}, nil
+	return UpgradePlan{Version: 2, Before: expected, After: record.After, ChangeRequired: false, AddedWorkerRequests: []string{}}, nil
 }
 
 func inspectUpgrade(d *upgradeDirectory) (upgradeSnapshot, error) {
 	var result upgradeSnapshot
-	if _, err := d.inventory(); err != nil {
+	present, err := d.inventory()
+	if err != nil {
 		return result, err
 	}
 	if !slices.Equal(enrollment.Operations(), upgradedOperations) {
@@ -260,16 +271,70 @@ func inspectUpgrade(d *upgradeDirectory) (upgradeSnapshot, error) {
 	if err != nil {
 		return result, ErrUpgrade
 	}
-	legacy, err := precedingWorkerGrant(target)
-	if err != nil || !bytes.Equal(actual, legacy) && !bytes.Equal(actual, target) {
+	original, err := precedingWorkerGrant(target)
+	if err != nil {
 		return result, ErrUpgrade
 	}
-	return upgradeSnapshot{current: actual, legacy: legacy, target: target}, nil
+	previous, err := workerGrant(target, previousOperations)
+	if err != nil || !bytes.Equal(actual, original) && !bytes.Equal(actual, previous) && !bytes.Equal(actual, target) {
+		return result, ErrUpgrade
+	}
+	// Retain a completed v1 migration verbatim. An interrupted v1 migration must
+	// first be resumed by its original distribution; a new review cannot rewrite
+	// its immutable target or consume its staging file.
+	prior := present[priorJournal] || present[priorBackup] || present[priorNext] || present[priorComplete]
+	if prior {
+		if present[priorNext] || !present[priorJournal] || !present[priorBackup] || !present[priorComplete] || bytes.Equal(actual, original) {
+			return result, ErrUpgrade
+		}
+		record, _ := json.Marshal(upgradeRecord{Version: 1, Before: digest(original), After: digest(previous)})
+		for name, wanted := range map[string][]byte{priorJournal: record, priorBackup: original, priorComplete: record} {
+			retained, err := d.read(name, 64<<10)
+			if err != nil || !bytes.Equal(retained, wanted) {
+				return result, ErrUpgrade
+			}
+		}
+	}
+	legacy := actual
+	if present[upgradeJournal] {
+		encoded, err := d.read(upgradeJournal, 1024)
+		if err != nil {
+			return result, ErrUpgrade
+		}
+		var record upgradeRecord
+		if json.Unmarshal(encoded, &record) != nil {
+			return result, ErrUpgrade
+		}
+		switch record.Before {
+		case digest(original):
+			if prior {
+				return result, ErrUpgrade
+			}
+			legacy = original
+		case digest(previous):
+			legacy = previous
+		default:
+			return result, ErrUpgrade
+		}
+		wanted, _ := json.Marshal(upgradeRecord{Version: 2, Before: digest(legacy), After: digest(target)})
+		if !bytes.Equal(encoded, wanted) || !bytes.Equal(actual, legacy) && !bytes.Equal(actual, target) {
+			return result, ErrUpgrade
+		}
+	}
+	added := []string{"software"}
+	if bytes.Equal(legacy, original) {
+		added = []string{"hardware", "recovery", "rotation", "software"}
+	}
+	return upgradeSnapshot{current: actual, legacy: legacy, target: target, added: added}, nil
 }
 
 // The preceding initializer used shared commit 5083e68c8f76. Its renderer is
 // identical except for these eight worker subjects (enrollment/subjects.go).
 func precedingWorkerGrant(target []byte) ([]byte, error) {
+	return workerGrant(target, originalOperations)
+}
+
+func workerGrant(target []byte, operations []string) ([]byte, error) {
 	var document map[string]any
 	if json.Unmarshal(target, &document) != nil {
 		return nil, ErrUpgrade
@@ -294,7 +359,6 @@ func precedingWorkerGrant(target []byte) ([]byte, error) {
 	if !ok {
 		return nil, ErrUpgrade
 	}
-	operations := []string{"report", "deployresult", "agentconfig", "wingetcfg.profiles", "ansiblecfg.profiles", "wingetcfg.deploy", "wingetcfg.exclude", "wingetcfg.report"}
 	subjects := make([]string, len(operations))
 	for i, operation := range operations {
 		subjects[i] = "uem.v1.agent.*.request." + operation

@@ -56,12 +56,12 @@ a separate reviewed reconfiguration/rotation operation.
 
 The command produces no secrets on stdout or in command-line arguments. It does
 not replace organization enrollment CAs, Apple push credentials or public HTTPS
-certificates. It pins the published shared-library commit `87aa1bdf56ea`, whose
-[CI passed](https://github.com/the-luap/openuem-nats/actions/runs/34523652815). This
+certificates. It pins the published shared-library commit `de9cd6f67c5e`, whose
+[CI passed](https://github.com/the-luap/openuem-nats/actions/runs/34587114278). This
 matches the current console/worker protocol, including the separate `hardware`,
-`recovery` and `rotation` request subjects. A regression test verifies the exact
-worker subscription grant; the preceding initializer pin omitted these subjects
-and could not start the current worker against its generated configuration.
+`recovery`, `rotation` and `software` request subjects. A regression test verifies the exact
+worker subscription grant; older initializer pins omitted one or more of these subjects
+and could not satisfy current worker subscriptions or reference readiness.
 
 This change affects newly generated configuration. An ordinary initialization
 retry still rejects a changed installed `broker.json` and never rewrites it or

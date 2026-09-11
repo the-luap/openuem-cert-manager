@@ -29,17 +29,24 @@ import (
 	"github.com/open-uem/nats/enrollment/keyfile"
 )
 
-// This fixture requires actual distribution executables, including the previous
-// initializer pinned to 938ea1a77eba4c9eb4517db629fc42ef2f8b96ad. The old renderer
-// is therefore exercised independently of this package's migration helper.
+// This fixture requires actual distribution executables for both preceding
+// renderers. The old grants and v1 journal are produced independently of this
+// package's migration helpers.
 func TestBrokerUpgradeDistributionProcess(t *testing.T) {
 	current, legacy, server := os.Getenv("OPENUEM_UPGRADE_BINARY"), os.Getenv("OPENUEM_LEGACY_SETUP_BINARY"), os.Getenv("OPENUEM_BROKER_BINARY")
-	if current == "" && legacy == "" && server == "" {
+	previous := os.Getenv("OPENUEM_PREVIOUS_SETUP_BINARY")
+	if current == "" && legacy == "" && server == "" && previous == "" {
 		t.Skip("requires the isolated broker upgrade distribution fixture")
 	}
-	if current == "" || legacy == "" || server == "" || os.Geteuid() == 0 {
+	if current == "" || legacy == "" || server == "" || previous == "" || os.Geteuid() == 0 {
 		t.Fatal("all actual runtime binaries and an unprivileged account are required")
 	}
+	for _, source := range []string{"original", "previous", "completed-v1"} {
+		t.Run(source, func(t *testing.T) { runBrokerUpgradeDistribution(t, current, legacy, previous, server, source) })
+	}
+}
+
+func runBrokerUpgradeDistribution(t *testing.T, current, legacy, previous, server, source string) {
 	ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
 	defer cancel()
 	root := t.TempDir()
@@ -71,12 +78,24 @@ func TestBrokerUpgradeDistributionProcess(t *testing.T) {
 		}
 		return output
 	}
-	run(legacy, "individual-broker", "--directory", directory, "--name", "upgrade-fixture", "--listen", listen, "--websocket-listen", websocket,
+	initializer := legacy
+	if source == "previous" {
+		initializer = previous
+	}
+	run(initializer, "individual-broker", "--directory", directory, "--name", "upgrade-fixture", "--listen", listen, "--websocket-listen", websocket,
 		"--tls-cert", certPath, "--tls-key", keyPath, "--gateway-ca", caPath, "--store-directory", storage)
+	if source == "completed-v1" {
+		output := run(previous, "individual-broker-upgrade", "--directory", directory, "--check")
+		var plan UpgradePlan
+		if json.Unmarshal(output, &plan) != nil || plan.Version != 1 || !plan.ChangeRequired {
+			t.Fatal("actual v1 preview failed")
+		}
+		run(previous, "individual-broker-upgrade", "--directory", directory, "--expected-sha256", plan.Before)
+	}
 	before := upgradeFiles(t, directory)
 	output := run(current, "individual-broker-upgrade", "--directory", directory, "--check")
 	var plan UpgradePlan
-	if json.Unmarshal(output, &plan) != nil || !plan.ChangeRequired {
+	if json.Unmarshal(output, &plan) != nil || plan.Version != 2 || !plan.ChangeRequired {
 		t.Fatal("actual old renderer was not recognized for upgrade")
 	}
 	if !reflect.DeepEqual(before, upgradeFiles(t, directory)) {
@@ -204,7 +223,7 @@ func TestBrokerUpgradeDistributionProcess(t *testing.T) {
 		}
 	}
 	stop := start()
-	permission(false, "uem.v1.agent.*.request.hardware")
+	permission(false, "uem.v1.agent.*.request.software")
 	connection, js := provisioner()
 	if _, err := js.CreateStream(ctx, jetstream.StreamConfig{Name: "AGENTS_STREAM", Subjects: []string{"agent.>"}, Storage: jetstream.FileStorage}); err != nil {
 		t.Fatal("original stream could not be created")
@@ -221,6 +240,13 @@ func TestBrokerUpgradeDistributionProcess(t *testing.T) {
 		t.Fatal("actual upgrade did not report retained completion")
 	}
 	after := upgradeFiles(t, directory)
+	if source == "completed-v1" {
+		for _, name := range []string{priorJournal, priorBackup, priorComplete} {
+			if before[name] == "" || before[name] != after[name] {
+				t.Fatal("actual v1 history was lost or changed")
+			}
+		}
+	}
 	retry := run(current, "individual-broker-upgrade", "--directory", directory, "--expected-sha256", plan.Before)
 	if !bytes.Equal(result, retry) || !reflect.DeepEqual(after, upgradeFiles(t, directory)) {
 		t.Fatal("actual retry changed completed upgrade")
@@ -236,7 +262,7 @@ func TestBrokerUpgradeDistributionProcess(t *testing.T) {
 		clear(data)
 	}
 	stop = start()
-	for _, operation := range []string{"hardware", "recovery", "rotation"} {
+	for _, operation := range []string{"hardware", "recovery", "rotation", "software"} {
 		permission(true, "uem.v1.agent.*.request."+operation)
 	}
 	permission(false, "uem.v1.agent.*.request.>")

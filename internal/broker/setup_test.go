@@ -44,7 +44,7 @@ func TestSetupIncludesCurrentWorkerSubjects(t *testing.T) {
 	if err != nil || json.Unmarshal(data, &configuration) != nil {
 		t.Fatal("generated broker configuration is unreadable")
 	}
-	wanted := []string{"report", "hardware", "recovery", "rotation", "deployresult", "agentconfig",
+	wanted := []string{"report", "hardware", "recovery", "rotation", "software", "deployresult", "agentconfig",
 		"wingetcfg.profiles", "ansiblecfg.profiles", "wingetcfg.deploy", "wingetcfg.exclude", "wingetcfg.report"}
 	for i := range wanted {
 		wanted[i] = "uem.v1.agent.*.request." + wanted[i]
