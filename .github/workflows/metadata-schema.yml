@@ -1,0 +1,39 @@
+name: Organization metadata schema
+
+on:
+  pull_request:
+  push:
+    branches: [main, 'feature/**']
+
+permissions:
+  contents: read
+
+jobs:
+  restart:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: openuem_test
+          POSTGRES_PASSWORD: local-test-only
+          POSTGRES_DB: openuem_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U openuem_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      APPLE_MDM_TEST_DATABASE_URL: postgres://openuem_test:local-test-only@127.0.0.1:5432/openuem_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.8'
+          cache: true
+      - name: Restart with scoped duplicate names and additive schema objects
+        run: |
+          go test -mod=readonly -race -count=1 -run '^TestMetadataSchema' ./internal/models
+          go vet -mod=readonly ./internal/models

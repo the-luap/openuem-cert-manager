@@ -29,7 +29,8 @@ func New(dbUrl string) (*Model, error) {
 	// TODO Automatic migrations only in development
 	ctx := context.Background()
 	if os.Getenv("ENV") != "prod" {
-		if err := model.Client.Schema.Create(ctx); err != nil {
+		if err := model.Client.Schema.Create(ctx, metadataFieldScope()); err != nil {
+			_ = db.Close()
 			return nil, err
 		}
 	}
